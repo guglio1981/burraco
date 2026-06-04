@@ -1,0 +1,292 @@
+/* ============================================================
+   Tavolo di gioco — fedele al look v527
+   Usa classi di table.css + componenti in TableComponents.tsx
+   ============================================================ */
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import '../styles/table.css';
+import type { Card } from '@burraco/shared';
+import { validateMeld, validateAddToMeld } from '@burraco/shared';
+import { wsClient } from '../lib/ws.js';
+import { useStore } from '../lib/store.js';
+import { Icon } from '../components/Icon.js';
+import { LtCInner, LtMeldPile, LtPozzoPile } from '../components/TableComponents.tsx';
+import { flyGhost, glowEl, bounceEl, pingEl } from '../lib/animations.js';
+import { sfx } from '../lib/sound.js';
+
+const MODE_LABELS: Record<string, string> = { fast: 'Mod. veloce', '1005': 'Punti 1005', '2005': 'Punti 2005' };
+
+function suitCls(c: Card) {
+  if (c.joker) return 'joker-c';
+  return c.suit === '♥' || c.suit === '♦' ? 'red' : 'blk';
+}
+
+export function TableScreen() {
+  const store = useStore();
+  const view = store.gameView;
+  const sel = store.selectedIds;
+  const [sort, setSort] = useState<'suit' | 'rank'>('suit');
+
+  // Refs per le zone del tavolo (animazioni)
+  const deckRef = useRef<HTMLDivElement>(null);
+  const discardRef = useRef<HTMLDivElement>(null);
+  const handRef = useRef<HTMLDivElement>(null);
+  const myMeldsRef = useRef<HTMLDivElement>(null);
+  const oppBarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { store.clearSelection(); }, [view?.phase, view?.turn]);
+
+  // Suono "tuo turno" quando tocca a me
+  const prevTurnRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (view && view.turn === view.you && prevTurnRef.current !== view.you + view.rev) {
+      sfx.yourTurn();
+      prevTurnRef.current = view.you + view.rev;
+    }
+  }, [view?.turn, view?.rev]);
+
+  // Animazioni azioni avversario
+  useEffect(() => {
+    wsClient.updateHandlers({
+      onOppAction: (action) => {
+        sfx.oppAction();
+        if (action === 'draw_deck' && deckRef.current && oppBarRef.current) {
+          flyGhost(deckRef.current, oppBarRef.current, { dorso: true, duration: 220 });
+        } else if (action === 'discard' && oppBarRef.current && discardRef.current) {
+          flyGhost(oppBarRef.current, discardRef.current, { duration: 200 });
+          if (discardRef.current) bounceEl(discardRef.current);
+        } else if (action === 'meld' || action === 'add_to_meld') {
+          if (oppBarRef.current) pingEl(oppBarRef.current, '♟');
+        }
+      },
+    });
+  }, []);
+
+  const toggle = useCallback((id: string) => store.toggleCard(id), []);
+
+  if (!view) return <div className="legacy-table" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}>Caricamento…</div>;
+
+  const isMyTurn = view.phase === 'draw' || view.phase === 'play';
+  const myPhase = view.turn === view.you ? view.phase : 'wait';
+
+  const selCards = sel.map((id) => view.myHand.find((c) => c.id === id)).filter(Boolean) as Card[];
+  const meldVal = selCards.length >= 3 ? validateMeld(selCards) : { valid: false };
+
+  // Ordina mano
+  const hand = [...view.myHand].sort((a, b) => {
+    if (sort === 'suit') {
+      if (a.suit !== b.suit) return a.suit.localeCompare(b.suit);
+      const RIDX: Record<string, number> = { A: 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, J: 11, Q: 12, K: 13, JK: 14 };
+      return (RIDX[a.rank] ?? 0) - (RIDX[b.rank] ?? 0);
+    }
+    const RIDX: Record<string, number> = { A: 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9, '10': 10, J: 11, Q: 12, K: 13, JK: 14 };
+    return (RIDX[a.rank] ?? 0) - (RIDX[b.rank] ?? 0);
+  });
+
+  const rows = [hand.slice(0, Math.ceil(hand.length / 2)), hand.slice(Math.ceil(hand.length / 2))];
+
+  // Azioni + animazioni + suoni
+  function drawDeck() {
+    if (myPhase !== 'draw') return;
+    if (deckRef.current) glowEl(deckRef.current);
+    if (deckRef.current && handRef.current) {
+      flyGhost(deckRef.current, handRef.current, { dorso: true, duration: 230 });
+    }
+    sfx.draw();
+    wsClient.move({ type: 'DRAW_DECK' });
+  }
+  function takeDiscard() {
+    if (myPhase !== 'draw' || !view!.discard.length) return;
+    if (discardRef.current && handRef.current) {
+      flyGhost(discardRef.current, handRef.current, { duration: 200 });
+    }
+    sfx.draw();
+    wsClient.move({ type: 'TAKE_DISCARD' });
+  }
+  function doMeld() {
+    if (!meldVal.valid) return;
+    if (myMeldsRef.current) {
+      sel.forEach((id, i) => {
+        const el = document.querySelector<HTMLElement>(`[data-card-id="${id}"]`);
+        if (el && myMeldsRef.current) {
+          flyGhost(el, myMeldsRef.current, { duration: 200, arc: -28, delay: i * 40 });
+        }
+      });
+    }
+    sfx.meld();
+    wsClient.move({ type: 'MELD', cardIds: sel });
+    store.clearSelection();
+  }
+  function doDiscard() {
+    if (sel.length !== 1) return;
+    const el = document.querySelector<HTMLElement>(`[data-card-id="${sel[0]}"]`);
+    if (el && discardRef.current) {
+      flyGhost(el, discardRef.current, { duration: 220 });
+      bounceEl(discardRef.current);
+    }
+    sfx.discard();
+    wsClient.move({ type: 'DISCARD', cardId: sel[0]! });
+    store.clearSelection();
+  }
+  function addToMeld(meldIndex: number) {
+    if (myPhase !== 'play' || !sel.length) return;
+    const existing = view!.myMelds[meldIndex];
+    if (!existing) return;
+    const v = validateAddToMeld(existing, selCards);
+    if (!v.valid) { store.showToast(v.msg ?? 'Aggiunta non valida'); return; }
+    if (myMeldsRef.current) {
+      sel.forEach((id, i) => {
+        const el = document.querySelector<HTMLElement>(`[data-card-id="${id}"]`);
+        if (el && myMeldsRef.current) flyGhost(el, myMeldsRef.current, { duration: 200, delay: i * 35 });
+      });
+    }
+    sfx.meld();
+    wsClient.move({ type: 'ADD_TO_MELD', meldIndex, cardIds: sel });
+    store.clearSelection();
+  }
+
+  // Messaggio barra
+  let msg = 'Pesca dal mazzo o dagli scarti', msgCls = '';
+  if (myPhase === 'wait') { msg = `Turno di ${view.you === 'host' ? 'guest' : 'host'}`; }
+  else if (myPhase === 'play') {
+    if (selCards.length >= 3) {
+      msg = meldVal.valid ? (meldVal.label ?? 'Scala valida') : (meldVal.msg ?? 'Scala non valida');
+      msgCls = meldVal.valid ? 'ok' : 'err';
+    } else if (selCards.length === 1) {
+      msg = 'Calala o scartala per chiudere il turno';
+    } else {
+      msg = 'Seleziona le carte da calare';
+    }
+  }
+
+  // Timer
+  const elapsed = Math.floor((Date.now() - view.turnStart) / 1000);
+  const timerSec = Math.max(0, 60 - elapsed);
+  const timerFrac = timerSec / 60;
+
+  const topCard = view.discard.length > 0 ? view.discard[view.discard.length - 1] : null;
+
+  return (
+    <div className="legacy-table">
+      <div className="lt-safe" />
+      <div className="lt-game">
+
+        {/* TOPBAR avversario */}
+        <div className="lt-topbar" ref={oppBarRef}>
+          <div className="lt-av">
+            {view.you === 'host' ? '🦊' : '🦝'}
+          </div>
+          <span className="lt-pname">{view.you === 'host' ? 'guest' : 'host'}</span>
+          <span className="lt-sbig">{view.scores[view.you === 'host' ? 'guest' : 'host']}</span>
+          <LtPozzoPile taken={view.oppPozzoPicked} count={view.oppPozzoCount} />
+          <div className="lt-spacer" />
+          <div className="lt-av" style={{ marginRight: 4 }}>
+            <div className="lt-opp-badge">{view.oppHandCount} carte</div>
+          </div>
+          <button className="lt-icon-btn" aria-label="Impostazioni">
+            <Icon name="gear" size={18} color="rgba(245,240,232,.6)" />
+          </button>
+        </div>
+
+        {/* TAVOLO */}
+        <div className="lt-table">
+          {/* scale avversario */}
+          <div className="lt-opp-melds">
+            <div className="lt-melds-row">
+              {view.oppMelds.length === 0
+                ? <span className="lt-meld-empty">nessuna scala</span>
+                : view.oppMelds.map((m, i) => <LtMeldPile key={i} cards={m} />)}
+            </div>
+          </div>
+
+          {/* mazzo + scarti */}
+          <div className="lt-center">
+            <div className={'lt-pw' + (myPhase !== 'draw' ? ' dis' : '')} onClick={drawDeck}>
+              <div ref={deckRef} className={'lt-deck' + (myPhase === 'draw' ? ' hot' : '')}>
+                <span className="lt-deck-count">{view.deckCount}</span>
+              </div>
+              <div className="lt-plbl">Mazzo</div>
+            </div>
+            <div className="lt-pw" onClick={takeDiscard}>
+              <div ref={discardRef} className={'lt-disw' + (myPhase === 'draw' && view.discard.length ? ' hot' : '')}>
+                {!topCard
+                  ? <div className="lt-dis-empty">vuoto</div>
+                  : <div className={`lt-card ${suitCls(topCard)}`}><LtCInner c={topCard} /></div>}
+                {view.discard.length > 0 && <div className="lt-disbadge">{view.discard.length}</div>}
+              </div>
+              <div className="lt-plbl">Scarti</div>
+            </div>
+          </div>
+
+          {/* barra "Tu" */}
+          <div className="lt-me-bar">
+            <div className="lt-av">
+              {view.you === 'host' ? '🦝' : '🦊'}
+            </div>
+            <span className="lt-pname">Tu</span>
+            <span className="lt-sbig">{view.scores[view.you]}</span>
+            <LtPozzoPile taken={view.myPozzoPicked} count={view.myPozzoCount} />
+          </div>
+
+          {/* scale mie */}
+          <div className="lt-my-melds" ref={myMeldsRef}>
+            <div className="lt-melds-row">
+              {view.myMelds.length === 0
+                ? <span className="lt-meld-empty">nessuna scala</span>
+                : view.myMelds.map((m, i) => (
+                    <LtMeldPile key={i} cards={m}
+                      onClick={() => myPhase === 'play' && sel.length > 0 && addToMeld(i)} />
+                  ))}
+            </div>
+          </div>
+        </div>
+
+        {/* HUD inferiore */}
+        <div className="lt-bot">
+          <div className="lt-bot-left">
+            <div className="lt-turn-lbl">
+              <span className={'lt-turn-badge' + (isMyTurn && view.turn === view.you ? ' my' : ' wait')}>
+                {isMyTurn && view.turn === view.you ? 'Tuo turno' : 'Attendi'}
+              </span>
+            </div>
+            <div className="lt-bot-mode">{MODE_LABELS[view.mode]}</div>
+            <div className="lt-bot-round">Round {view.round}</div>
+            <div className="lt-sort-btns">
+              <button className={'lt-sort-btn' + (sort === 'suit' ? ' active' : '')} onClick={() => setSort('suit')}>Scala</button>
+              <button className={'lt-sort-btn' + (sort === 'rank' ? ' active' : '')} onClick={() => setSort('rank')}>Poker</button>
+            </div>
+          </div>
+          <div className="lt-bot-center">
+            <div className="lt-timer-wrap">
+              {isMyTurn && view.turn === view.you && (
+                <div className="lt-timer-fill" style={{ width: (timerFrac * 100) + '%' }} />
+              )}
+            </div>
+            <div className="lt-msg-bar">
+              <div className={`lt-msgbar ${msgCls}`}>{msg}</div>
+              {myPhase === 'play' && (
+                <>
+                  <button className={`lt-act-btn lt-act-gold${meldVal.valid ? '' : ' off'}`} onClick={doMeld}>Cala</button>
+                  <button className={`lt-act-btn lt-act-ghost${sel.length === 1 ? '' : ' off'}`} onClick={doDiscard}>Scarta</button>
+                </>
+              )}
+            </div>
+            <div ref={handRef} className="lt-handscroll">
+              {rows.map((row, ri) => (
+                <div className="lt-hand-row" key={ri}>
+                  {row.map((c) => (
+                    <div key={c.id} data-card-id={c.id}
+                      className={`lt-card ${suitCls(c)}${sel.includes(c.id) ? ' selected' : ''}`}
+                      onClick={() => myPhase === 'play' && toggle(c.id)}>
+                      <LtCInner c={c} />
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}

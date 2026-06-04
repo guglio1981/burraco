@@ -1,0 +1,57 @@
+/* REST client — wrappa fetch verso il server */
+import { getToken } from './session.js';
+
+const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8787';
+
+async function req<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const token = getToken();
+  const res = await fetch(`${BASE}/api${path}`, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(opts.headers ?? {}),
+    },
+  });
+  const body: unknown = await res.json();
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body !== null && 'error' in body
+      ? String((body as { error: unknown }).error)
+      : `Errore ${res.status}`;
+    throw new Error(msg);
+  }
+  return body as T;
+}
+
+export interface PublicUser { id: string; nick: string; email: string | null; isGuest: boolean; notificationsEnabled?: boolean; }
+export interface OnlineUser { id: string; nick: string; busy?: boolean; }
+export interface AuthResp { token: string; user: PublicUser; }
+export interface RoomView {
+  id: string; code: string; status: string; gameMode: string;
+  host: PublicUser | null; guest: PublicUser | null; expiresAt: string;
+}
+
+export const api = {
+  register: (b: { nick: string; email: string; password: string }) =>
+    req<AuthResp>('/register', { method: 'POST', body: JSON.stringify(b) }),
+  login: (b: { email: string; password: string }) =>
+    req<AuthResp>('/login', { method: 'POST', body: JSON.stringify(b) }),
+  guest: (nick?: string) =>
+    req<AuthResp>('/guest', { method: 'POST', body: JSON.stringify({ nick }) }),
+  me: () => req<{ user: PublicUser }>('/me'),
+
+  createRoom: (gameMode: string) =>
+    req<{ room: RoomView }>('/create-room', { method: 'POST', body: JSON.stringify({ gameMode }) }),
+  joinRoom: (code: string) =>
+    req<{ room: RoomView }>('/join-room', { method: 'POST', body: JSON.stringify({ code }) }),
+  getRoom: (code: string) => req<{ room: RoomView }>(`/rooms/${code}`),
+  startGame: (roomId: string) =>
+    req<{ room: RoomView; view: unknown }>('/start-game', { method: 'POST', body: JSON.stringify({ roomId }) }),
+
+  savePushSubscription: (sub: Record<string, unknown>) =>
+    req<{ ok: boolean }>('/push-subscribe', { method: 'POST', body: JSON.stringify({ sub }) }),
+  getOnlineUsers: (excludeId: string) =>
+    req<{ items: OnlineUser[] }>(`/get-online-users?excludeId=${excludeId}`),
+  sendPushInvite: (userId: string, roomCode: string) =>
+    req<{ status: string }>('/send-push', { method: 'POST', body: JSON.stringify({ userId, roomCode }) }),
+};

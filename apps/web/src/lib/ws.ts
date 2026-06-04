@@ -1,0 +1,130 @@
+/* WebSocket client: connect/reconnect, move, stale→resync */
+import type { Move, PublicView, Seat } from '@burraco/shared';
+import type { RoomView } from './api.js';
+
+const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8787';
+
+export type WsHandler = {
+  onState?: (view: PublicView) => void;
+  onRoom?: (room: RoomView) => void;
+  onError?: (msg: string) => void;
+  onOppAction?: (action: string, seat: Seat) => void;
+  onConnected?: () => void;
+  onDisconnected?: () => void;
+};
+
+interface ServerMsg {
+  t: string;
+  view?: PublicView;
+  room?: RoomView;
+  error?: string;
+  rev?: number;
+  action?: string;
+  seat?: Seat;
+}
+
+export class BurracoWS {
+  private ws: WebSocket | null = null;
+  private token = '';
+  private roomId = '';
+  private seat: Seat | null = null;
+  private baseRev = 0;
+  private handlers: WsHandler = {};
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private destroyed = false;
+
+  connect(token: string, handlers: WsHandler): void {
+    this.token = token;
+    this.handlers = handlers;
+    this.open();
+  }
+
+  private open(): void {
+    if (this.destroyed) return;
+    const ws = new WebSocket(`${WS_URL}/ws`);
+    this.ws = ws;
+
+    ws.onopen = () => {
+      this.sendRaw({ t: 'auth', token: this.token });
+      this.handlers.onConnected?.();
+      if (this.roomId) this.sendRaw({ t: 'subscribe', roomId: this.roomId });
+    };
+
+    ws.onmessage = (e: MessageEvent) => {
+      let msg: ServerMsg;
+      try { msg = JSON.parse(String(e.data)) as ServerMsg; } catch { return; }
+      this.onMsg(msg);
+    };
+
+    ws.onclose = () => {
+      this.handlers.onDisconnected?.();
+      if (!this.destroyed) {
+        this.reconnectTimer = setTimeout(() => void this.open(), 2000);
+      }
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  private onMsg(msg: ServerMsg): void {
+    switch (msg.t) {
+      case 'state':
+        if (msg.view) {
+          this.baseRev = msg.view.rev;
+          this.seat = msg.view.you;
+          this.handlers.onState?.(msg.view);
+        }
+        break;
+      case 'room':
+        if (msg.room) this.handlers.onRoom?.(msg.room);
+        break;
+      case 'stale':
+        // rev non combaciante → chiedi resync
+        this.sendRaw({ t: 'resync', roomId: this.roomId });
+        break;
+      case 'opp_action':
+        if (msg.action && msg.seat) this.handlers.onOppAction?.(msg.action, msg.seat);
+        break;
+      case 'error':
+        if (msg.error) this.handlers.onError?.(msg.error);
+        break;
+    }
+  }
+
+  subscribe(roomId: string): void {
+    this.roomId = roomId;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.sendRaw({ t: 'subscribe', roomId });
+    }
+  }
+
+  move(move: Move): void {
+    this.sendRaw({ t: 'move', roomId: this.roomId, baseRev: this.baseRev, move });
+  }
+
+  nextRound(): void {
+    this.sendRaw({ t: 'next_round', roomId: this.roomId });
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.ws?.close();
+    this.ws = null;
+  }
+
+  /** Aggiorna solo gli handler specifici senza riconnettere. */
+  updateHandlers(partial: Partial<WsHandler>): void {
+    this.handlers = { ...this.handlers, ...partial };
+  }
+
+  get currentSeat(): Seat | null { return this.seat; }
+
+  private sendRaw(obj: unknown): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(obj));
+    }
+  }
+}
+
+export const wsClient = new BurracoWS();

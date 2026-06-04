@@ -1,0 +1,24 @@
+@import './tokens.css';
+
+*, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body, #root {
+  margin: 0; padding: 0; height: 100%;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  position: relative;
+  max-width: 430px;
+  margin: 0 auto;
+  background: var(--felt-deep);
+  /* shadow per simulare il frame del telefono su desktop */
+  box-shadow: 0 0 40px rgba(0,0,0,.6);
+}
+
+/* su mobile occupa l'intero schermo */
+@media (max-width: 430px) {
+  #root { max-width: 100%; box-shadow: none; }
+}

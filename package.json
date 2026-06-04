@@ -1,0 +1,23 @@
+{
+  "name": "burraco",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Burraco 1v1 online (PWA) — server autoritativo, motore condiviso",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n server,web -c blue,magenta \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "npm -w @burraco/server run dev",
+    "dev:web": "npm -w @burraco/web run dev",
+    "build": "npm -w @burraco/web run build",
+    "test": "npm -w @burraco/shared run test",
+    "typecheck": "tsc -b"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "typescript": "^5.7.2"
+  }
+}

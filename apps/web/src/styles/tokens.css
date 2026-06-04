@@ -1,0 +1,115 @@
+/* ============================================================
+   BURRACO — Design tokens Sistema B "Premium"
+   Usato da TUTTE le schermate TRANNE il tavolo di gioco.
+   Fonte: prototype/tokens.css (handoff)
+   ============================================================ */
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Hanken+Grotesk:wght@400;500;600;700;800&display=swap');
+
+:root {
+  /* — feltro / superfici — */
+  --felt-1:    oklch(0.34 0.050 168);
+  --felt-0:    oklch(0.26 0.042 168);
+  --felt-deep: oklch(0.19 0.034 168);
+  --surface:   oklch(0.255 0.026 168);
+  --surface-2: oklch(0.305 0.030 168);
+  --line:      oklch(0.46 0.022 168 / 0.45);
+  --line-soft: oklch(0.60 0.020 168 / 0.16);
+
+  /* — testo — */
+  --ink:       oklch(0.960 0.012 95);
+  --ink-mut:   oklch(0.760 0.016 120);
+  --ink-dim:   oklch(0.600 0.016 140);
+
+  /* — oro / ottone — */
+  --gold:      oklch(0.815 0.125 86);
+  --gold-2:    oklch(0.720 0.120 80);
+  --gold-deep: oklch(0.560 0.095 74);
+  --gold-soft: oklch(0.815 0.125 86 / 0.14);
+
+  /* — stati burraco — */
+  --clean:  oklch(0.840 0.150 156);
+  --semi:   oklch(0.815 0.125 86);
+  --dirty:  oklch(0.640 0.055 72);
+  --danger: oklch(0.640 0.180 25);
+
+  /* — carta da gioco — */
+  --card-face: oklch(0.975 0.008 95);
+  --card-edge: oklch(0.890 0.012 95);
+  --suit-red:  oklch(0.560 0.205 26);
+  --suit-blk:  oklch(0.270 0.012 270);
+  --joker:     oklch(0.700 0.150 300);
+
+  /* — raggi / ombre — */
+  --r-sm: 10px; --r-md: 16px; --r-lg: 22px; --r-xl: 30px;
+  --sh-1: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.22);
+  --sh-2: 0 8px 30px rgba(0,0,0,.40), 0 2px 8px rgba(0,0,0,.30);
+  --sh-card: 0 1px 1px rgba(0,0,0,.30), 0 6px 14px rgba(0,0,0,.34);
+
+  --font-disp: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-ui:   'Hanken Grotesk', system-ui, sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+.b-screen {
+  position: absolute; inset: 0;
+  font-family: var(--font-ui);
+  color: var(--ink);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+
+.felt-bg {
+  background: radial-gradient(120% 80% at 50% 22%, var(--felt-1) 0%, var(--felt-0) 48%, var(--felt-deep) 100%);
+}
+.felt-bg::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E");
+  opacity: .035; mix-blend-mode: overlay;
+}
+.dark-bg {
+  background: radial-gradient(130% 90% at 50% 0%, var(--felt-0) 0%, var(--felt-deep) 70%, oklch(0.15 0.03 168) 100%);
+}
+
+/* — tipografia — */
+.t-brand { font-family: var(--font-disp); font-weight: 700; letter-spacing: -0.02em; }
+.t-h1 { font-family: var(--font-disp); font-weight: 700; font-size: 30px; letter-spacing: -0.02em; line-height: 1.05; }
+.t-h2 { font-family: var(--font-disp); font-weight: 600; font-size: 21px; letter-spacing: -0.01em; }
+.t-label { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-dim); }
+.t-mut { color: var(--ink-mut); }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* — bottoni — */
+.btn {
+  font-family: var(--font-ui); font-weight: 700; font-size: 16px;
+  border: none; cursor: pointer; border-radius: var(--r-md);
+  padding: 15px 20px; display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  transition: transform .12s ease, filter .15s ease, background .15s ease;
+  letter-spacing: -0.01em;
+}
+.btn:active { transform: translateY(1px) scale(0.99); }
+.btn-gold {
+  color: oklch(0.24 0.04 80);
+  background: linear-gradient(168deg, var(--gold) 0%, var(--gold-2) 100%);
+  box-shadow: 0 1px 0 oklch(0.92 0.08 90) inset, var(--sh-1);
+}
+.btn-gold:hover { filter: brightness(1.05); }
+.btn-ghost {
+  color: var(--ink); background: oklch(0.40 0.02 168 / 0.4);
+  border: 1px solid var(--line); backdrop-filter: blur(8px);
+}
+.btn-dark { color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); }
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700;
+  padding: 5px 10px; border-radius: 999px; letter-spacing: .01em;
+}
+
+.divider { height: 1px; background: var(--line-soft); }
+
+/* spinner */
+@keyframes spin { to { transform: rotate(360deg); } }
+.b-spin { animation: spin .7s linear infinite; }
+
+/* scrollbar discreta */
+::-webkit-scrollbar { width: 0; height: 0; }
